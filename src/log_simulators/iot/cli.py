@@ -4,7 +4,7 @@ Models a fleet of environmental sensors with stable identities - the same
 device id always reports the same model, firmware, city, and GPS-fuzzed
 coordinates. Readings are gaussian per metric with a slow per-device
 random-walk drift plus a diurnal temperature curve (peak mid-afternoon).
-Lineage: bacalhau-project/sensor-log-generator, rebuilt on the shared core.
+Lineage: the earlier standalone sensor generator, rebuilt on the shared core.
 
 Formats:
   ndjson  one JSON reading per line (default)

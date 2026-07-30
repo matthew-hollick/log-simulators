@@ -116,11 +116,8 @@ survive git installation (see uv issues
 
 ## Lineage
 
-Aggregates and supersedes
-[bacalhau-project/access-log-generator](https://github.com/bacalhau-project/access-log-generator)
-(now `logsim-web`),
-[bacalhau-project/sensor-log-generator](https://github.com/bacalhau-project/sensor-log-generator)
-(now `logsim-iot`), the log generators from `aronchick/sample-data`
+Aggregates and supersedes earlier standalone web and sensor generators
+(now `logsim-web` and `logsim-iot`), the log generators from `aronchick/sample-data`
 (now `logsim-windows`, `logsim-vmware`, and `logsim-ics`), and the retail
 transaction generator from `expanso-cluster` (now `logsim-retail`). CLI
 ergonomics inspired by [mingrammer/flog](https://github.com/mingrammer/flog).

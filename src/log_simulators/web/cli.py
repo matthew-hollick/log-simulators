@@ -2,8 +2,8 @@
 
 Models user *sessions* walking a weighted navigation graph - the same
 visitor IP, username, and user agent recur across a session's lines -
-rather than emitting independent random lines. Lineage:
-bacalhau-project/access-log-generator, rebuilt on the shared core.
+rather than emitting independent random lines. Lineage: the earlier
+standalone access-log generator, rebuilt on the shared core.
 
 Formats:
   combined     NCSA Combined Log Format (default; Apache/nginx access.log)
