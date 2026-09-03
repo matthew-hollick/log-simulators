@@ -23,6 +23,7 @@ TOOLS: dict[str, str] = {
     "postgres": "PostgreSQL server logs (multiline ERROR/DETAIL/STATEMENT)",
     "vmware": "VMware vSphere logs (vCenter tasks + ESXi vmkernel/hostd)",
     "ics": "Industrial/OT network-device syslog (Cisco-IOS-style, PLC comms)",
+    "ftd": "Cisco FTD security event syslog (connection, IPS, file, malware)",
     "retail": "Retail point-of-sale transactions (CSV or JSON, structured)",
 }
 

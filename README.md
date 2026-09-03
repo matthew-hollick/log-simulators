@@ -27,6 +27,7 @@ collector, or straight into an [Expanso Edge](https://expanso.io) pipeline.
 | `logsim-postgres` | PostgreSQL server logs incl. multiline ERROR/DETAIL/STATEMENT and slow queries | `deadlock` — lock-contention windows |
 | `logsim-vmware` | VMware vSphere — vCenter (vpxd) task begin/finish + ESXi vmkernel/hostd/vobd, one correlated estate | `host-failure` — ESXi host drops, vSphere HA restarts its VMs |
 | `logsim-ics` | Industrial/OT network-device syslog — Cisco-IOS-style `%FAC-SEV-MNEMONIC` from plant switches, PLC comms over PROFINET/MODBUS/DNP3/IEC-104 | `plc-comm-loss` — a cell-area segment degrades and recovers |
+|| `logsim-ftd` | Cisco FTD security event syslog - connection start/end (430002/430003), intrusion (430001), file (430004), and malware (430005) | `ips-flood` - recurring 430001 intrusion events from one external source |
 | `logsim-retail` | Retail point-of-sale transactions (CSV or JSON) — stable product catalog, Zipf best-sellers, recurring customers, per-region tax | `flash-sale` — promoted SKUs surge in volume and discount |
 
 Every tool shares the same CLI contract:
