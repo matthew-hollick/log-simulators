@@ -238,3 +238,98 @@ class TestUdpSink:
         sink.close()
         assert 0 < nbytes <= 65_000
         assert "truncated" in capsys.readouterr().err
+
+
+class TestBindOption:
+    """Tests for the --bind CLI option that binds TCP/UDP sockets to a source IP."""
+
+    def test_cli_parser_accepts_bind(self) -> None:
+        from log_simulators.core import base_parser, config_from_args
+
+        args = base_parser("t", "t").parse_args(["--bind", "127.0.1.1"])
+        cfg = config_from_args(args)
+        assert cfg.bind == "127.0.1.1"
+
+    def test_cli_parser_bind_defaults_to_none(self) -> None:
+        from log_simulators.core import base_parser, config_from_args
+
+        args = base_parser("t", "t").parse_args([])
+        cfg = config_from_args(args)
+        assert cfg.bind is None
+
+    def test_tcp_sink_binds_source_address(self) -> None:
+        """TcpSink should call sock.bind() with the specified address."""
+        from unittest.mock import MagicMock, patch
+
+        from log_simulators.core.sinks import TcpSink
+
+        mock_sock = MagicMock()
+        with patch("log_simulators.core.sinks.socket.socket", return_value=mock_sock):
+            sink = TcpSink("127.0.0.1", 9999, bind="127.0.1.1")
+            mock_sock.bind.assert_called_once_with(("127.0.1.1", 0))
+            mock_sock.connect.assert_called_once_with(("127.0.0.1", 9999))
+            sink.close()
+
+    def test_tcp_sink_no_bind_when_none(self) -> None:
+        """TcpSink should not call sock.bind() when bind is None."""
+        from unittest.mock import MagicMock, patch
+
+        from log_simulators.core.sinks import TcpSink
+
+        mock_sock = MagicMock()
+        with patch("log_simulators.core.sinks.socket.socket", return_value=mock_sock):
+            sink = TcpSink("127.0.0.1", 9999, bind=None)
+            mock_sock.bind.assert_not_called()
+            mock_sock.connect.assert_called_once_with(("127.0.0.1", 9999))
+            sink.close()
+
+    def test_udp_sink_binds_source_address(self) -> None:
+        """UdpSink should call sock.bind() with the specified address."""
+        from unittest.mock import MagicMock, patch
+
+        from log_simulators.core.sinks import UdpSink
+
+        mock_sock = MagicMock()
+        with patch("log_simulators.core.sinks.socket.socket", return_value=mock_sock):
+            sink = UdpSink("127.0.0.1", 9999, bind="127.0.1.2")
+            mock_sock.bind.assert_called_once_with(("127.0.1.2", 0))
+            sink.close()
+
+    def test_udp_sink_no_bind_when_none(self) -> None:
+        """UdpSink should not call sock.bind() when bind is None."""
+        from unittest.mock import MagicMock, patch
+
+        from log_simulators.core.sinks import UdpSink
+
+        mock_sock = MagicMock()
+        with patch("log_simulators.core.sinks.socket.socket", return_value=mock_sock):
+            sink = UdpSink("127.0.0.1", 9999, bind=None)
+            mock_sock.bind.assert_not_called()
+            sink.close()
+
+    def test_open_sink_passes_bind_to_udp(self) -> None:
+        """open_sink should forward bind to UdpSink."""
+        from unittest.mock import patch
+
+        from log_simulators.core.sinks import open_sink
+
+        with patch("log_simulators.core.sinks.UdpSink") as mock_cls:
+            open_sink("udp://127.0.0.1:5514", bind="127.0.1.3")
+            mock_cls.assert_called_once_with("127.0.0.1", 5514, bind="127.0.1.3")
+
+    def test_open_sink_passes_bind_to_tcp(self) -> None:
+        """open_sink should forward bind to TcpSink."""
+        from unittest.mock import patch
+
+        from log_simulators.core.sinks import open_sink
+
+        with patch("log_simulators.core.sinks.TcpSink") as mock_cls:
+            open_sink("tcp://127.0.0.1:1516", bind="127.0.1.1")
+            mock_cls.assert_called_once_with("127.0.0.1", 1516, bind="127.0.1.1")
+
+    def test_open_sink_ignores_bind_for_stdout(self) -> None:
+        """open_sink should not error when bind is set but output is stdout."""
+        from log_simulators.core.sinks import StdoutSink, open_sink
+
+        sink = open_sink("-", bind="127.0.1.1")
+        assert isinstance(sink, StdoutSink)

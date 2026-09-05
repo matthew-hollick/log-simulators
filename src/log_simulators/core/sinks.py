@@ -122,9 +122,11 @@ class FileSink(Sink):
 class UdpSink(Sink):
     _MAX_DATAGRAM = 65_000  # stay under the UDP payload ceiling
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(self, host: str, port: int, bind: str | None = None) -> None:
         self._addr = (host, port)
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        if bind:
+            self._sock.bind((bind, 0))  # 0 = ephemeral source port
         with contextlib.suppress(OSError):  # macOS defaults to a 9 KiB send buffer
             self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1 << 20)
         self._warned = False
@@ -160,16 +162,20 @@ class UdpSink(Sink):
 
 
 class TcpSink(Sink):
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(self, host: str, port: int, bind: str | None = None) -> None:
         self._addr = (host, port)
+        self._bind = bind
         try:
             self._sock = self._connect()
         except OSError as exc:
             raise SystemExit(f"cannot connect to tcp://{host}:{port}: {exc}") from exc
 
     def _connect(self) -> socket.socket:
-        sock = socket.create_connection(self._addr, timeout=10)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if self._bind:
+            sock.bind((self._bind, 0))  # 0 = ephemeral source port
         sock.settimeout(10)
+        sock.connect(self._addr)
         return sock
 
     def write(self, event: str) -> int:
@@ -189,7 +195,7 @@ class TcpSink(Sink):
             self._sock.close()
 
 
-def open_sink(output: str, rotate_mb: int = 0) -> Sink:
+def open_sink(output: str, rotate_mb: int = 0, bind: str | None = None) -> Sink:
     if rotate_mb and (output == "-" or output.startswith(("tcp://", "udp://"))):
         print("[logsim] warning: --rotate-mb only applies to file output; ignored", file=sys.stderr)
     if output == "-":
@@ -199,6 +205,6 @@ def open_sink(output: str, rotate_mb: int = 0) -> Sink:
         if not parsed.hostname or not parsed.port:
             raise SystemExit(f"invalid network destination: {output!r} (need host:port)")
         if parsed.scheme == "udp":
-            return UdpSink(parsed.hostname, parsed.port)
-        return TcpSink(parsed.hostname, parsed.port)
+            return UdpSink(parsed.hostname, parsed.port, bind=bind)
+        return TcpSink(parsed.hostname, parsed.port, bind=bind)
     return FileSink(output, rotate_mb=rotate_mb)

@@ -42,6 +42,7 @@ Every tool shares the same CLI contract:
 --seed N            fully reproducible output
 --diurnal           overnight trough, midday peak
 --output DEST       '-' stdout (default) | file path | tcp://host:port | udp://host:port
+--bind ADDR         bind the network output socket to a local source IP
 --rotate-mb N       rotate + gzip file output
 --scenario NAME     inject recurring anomaly windows (per-tool)
 ```
@@ -65,6 +66,11 @@ uvx --from git+https://github.com/expanso-io/log-simulators logsim-asa \
 
 # Umbrella command works too
 uvx --from git+https://github.com/expanso-io/log-simulators logsim k8s --rate 30
+
+# Send from a specific loopback alias so a downstream Logstash dictionary
+# can route by source IP (Linux: any 127.x.x.x works without configuration)
+uvx --from git+https://github.com/expanso-io/log-simulators logsim-asa \
+    --syslog-header --output tcp://127.0.0.1:1516 --bind 127.0.1.1
 ```
 
 Single-file versions of the most-used tools live in [`standalone/`](standalone/) —

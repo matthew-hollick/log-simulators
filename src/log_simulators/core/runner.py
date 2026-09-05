@@ -82,6 +82,7 @@ class RunConfig:
     tz: timezone | ZoneInfo = timezone.utc
     diurnal: bool = False
     quiet: bool = False
+    bind: str | None = None  # local source IP for TCP/UDP output sockets
     extra: argparse.Namespace = field(default_factory=argparse.Namespace)
 
     def content_rng(self, salt: str = "content") -> random.Random:
@@ -118,6 +119,13 @@ def base_parser(prog: str, description: str, default_rate: float = 10.0) -> argp
         default="-",
         metavar="DEST",
         help="'-' for stdout (default), a file path, tcp://host:port, or udp://host:port",
+    )
+    p.add_argument(
+        "--bind",
+        default=None,
+        metavar="ADDR",
+        help="local source IP address to bind the output socket to "
+        "(useful for testing source-IP-based routing; no effect on stdout/file output)",
     )
     p.add_argument(
         "--rotate-mb",
@@ -200,6 +208,7 @@ def config_from_args(args: argparse.Namespace) -> RunConfig:
         tz=tz,
         diurnal=args.diurnal,
         quiet=args.quiet,
+        bind=args.bind,
         extra=args,
     )
 
@@ -230,7 +239,7 @@ def run(cfg: RunConfig, make_event: EventFn) -> Stats:
     seq = 0
 
     try:
-        with open_sink(cfg.output, cfg.rotate_mb) as sink:
+        with open_sink(cfg.output, cfg.rotate_mb, cfg.bind) as sink:
             while True:
                 if cfg.count and seq >= cfg.count:
                     break
