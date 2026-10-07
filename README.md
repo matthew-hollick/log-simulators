@@ -18,7 +18,7 @@ collector, or straight into an [Expanso Edge](https://expanso.io) pipeline.
 | `logsim-web` | Apache/nginx access + error logs (NCSA combined/common/JSON), session-coherent visitors | `error-storm` — recurring 5xx spikes |
 | `logsim-iot` | IoT sensor telemetry NDJSON: temperature, humidity, pressure, vibration, voltage with drift + diurnal cycles | `sensor-fault` — spikes, stuck values, dropouts |
 | `logsim-syslog` | RFC 3164 and RFC 5424 syslog with realistic facility/severity mix | `auth-burst` — failed-login floods |
-| `logsim-windows` | Windows Security Event XML (4624/4625/4688/4672) | `brute-force` — 4625 password-spray bursts |
+| `logsim-windows` | Windows Security Event XML, flattened NDJSON, and Elastic `system.security`-compatible JSON (4624/4625/4688/4672/4720/4740) | `brute-force` — 4625 password-spray bursts |
 | `logsim-asa` | Cisco ASA firewall syslog — paired build/teardown with consistent connection IDs, denies | `port-scan` — deny storms from one source |
 | `logsim-cef` | CEF and LEEF security events (firewall/IPS style) | `malware-burst` — high-severity event waves |
 | `logsim-app` | Structured JSON app logs with trace IDs and realistic embedded PII (for redaction demos) | `error-storm`, `pii-leak` |
@@ -60,6 +60,10 @@ uvx --from git+https://github.com/expanso-io/log-simulators logsim-iot --backfil
 uvx --from git+https://github.com/expanso-io/log-simulators logsim-windows \
     --scenario brute-force --rate 20 --output udp://localhost:5514
 
+# Stream Elastic system.security-compatible JSON to Logstash
+uvx --from git+https://github.com/expanso-io/log-simulators logsim-windows \
+    --format elastic --scenario brute-force --rate 20 --output tcp://127.0.0.1:1518
+
 # Reproducible test fixture: same command, byte-identical output
 uvx --from git+https://github.com/expanso-io/log-simulators logsim-asa \
     --seed 42 --count 1000 --backfill 1h --start-time 2026-01-15T12:00:00+00:00
@@ -79,6 +83,8 @@ each is a self-contained [PEP 723](https://peps.python.org/pep-0723/) script:
 ```bash
 uv run https://raw.githubusercontent.com/expanso-io/log-simulators/main/standalone/web_access_sim.py --rate 10
 ```
+
+The `elastic` format for `logsim-windows` emits the pre-ingest document shape expected by the Elastic System integration's `system.security` pipeline. The receiving pipeline, not the simulator, adds data-stream routing (`logs-system.security-<namespace>`), `event.category`, `event.type`, `event.action`, and `user.*` / `process.*` / `source.*` ECS fields. No Elastic Agent identity fields are fabricated.
 
 ## Why these formats
 

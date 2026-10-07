@@ -11,6 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from itertools import pairwise
+from typing import ClassVar
 
 from log_simulators.windows.cli import main
 
@@ -18,6 +19,7 @@ from .conftest import generate
 
 XMLNS = "http://schemas.microsoft.com/win/2004/08/events/event"
 NS = {"e": XMLNS}
+PROVIDER_GUID = "{54849625-5478-4994-A5BA-3E3B0328C30D}"
 ALLOWED_IDS = {4624, 4625, 4672, 4688, 4720, 4740}
 SINGLE_LINE_RE = re.compile(
     r'^<Event xmlns="http://schemas\.microsoft\.com/win/2004/08/events/event">'
@@ -82,6 +84,11 @@ def _events_from_pretty(lines: list[str]) -> list[str]:
 
 def _records(count: int = 400, extra: list[str] | None = None, **kw: object) -> list[dict]:
     lines = generate(main, count=count, extra=["--format", "ndjson", *(extra or [])], **kw)  # type: ignore[arg-type]
+    return [json.loads(line) for line in lines]
+
+
+def _elastic_records(count: int = 400, extra: list[str] | None = None, **kw: object) -> list[dict]:
+    lines = generate(main, count=count, extra=["--format", "elastic", *(extra or [])], **kw)  # type: ignore[arg-type]
     return [json.loads(line) for line in lines]
 
 
@@ -247,6 +254,197 @@ class TestNdjsonFormat:
             if rec["logon_type"] in {3, 10}:
                 assert rec["source_ip"].startswith("10.0.")
                 assert 1024 <= rec["source_port"] <= 65535
+
+
+class TestElasticFormat:
+    REQUIRED_ROOT: ClassVar[set[str]] = {"@timestamp", "event", "winlog"}
+    REQUIRED_EVENT: ClassVar[set[str]] = {"code", "kind", "module", "outcome"}
+    REQUIRED_WINLOG: ClassVar[set[str]] = {
+        "api",
+        "channel",
+        "computer_name",
+        "event_id",
+        "provider_name",
+        "provider_guid",
+        "record_id",
+        "time_created",
+        "version",
+        "event_data",
+    }
+
+    def _records(
+        self, count: int = 400, extra: list[str] | None = None, **kw: object
+    ) -> list[dict]:
+        return _elastic_records(count=count, extra=extra, **kw)
+
+    def test_valid_json_one_line_per_event(self) -> None:
+        lines = generate(main, count=300, extra=["--format", "elastic"])
+        assert len(lines) == 300
+        for line in lines:
+            assert "\n" not in line
+            rec = json.loads(line)
+            assert isinstance(rec, dict)
+
+    def test_required_fields_and_types(self) -> None:
+        for rec in self._records(count=300):
+            assert rec.keys() >= self.REQUIRED_ROOT
+            assert rec["event"].keys() >= self.REQUIRED_EVENT
+            assert rec["winlog"].keys() >= self.REQUIRED_WINLOG
+            assert isinstance(rec["@timestamp"], str)
+            assert isinstance(rec["event"]["code"], str)
+            assert isinstance(rec["winlog"]["event_id"], str)
+            assert isinstance(rec["winlog"]["record_id"], str)
+            assert isinstance(rec["winlog"]["version"], int)
+            assert isinstance(rec["winlog"]["event_data"], dict)
+
+    def test_constant_values(self) -> None:
+        for rec in self._records(count=200):
+            assert rec["event"]["kind"] == "event"
+            assert rec["event"]["module"] == "system"
+            assert rec["winlog"]["api"] == "wineventlog"
+            assert rec["winlog"]["channel"] == "Security"
+            assert rec["winlog"]["provider_name"] == "Microsoft-Windows-Security-Auditing"
+            assert rec["winlog"]["provider_guid"] == PROVIDER_GUID
+
+    def test_event_code_consistency_and_supported_ids(self) -> None:
+        seen: set[str] = set()
+        for rec in self._records(count=600):
+            assert rec["event"]["code"] == rec["winlog"]["event_id"]
+            assert rec["event"]["code"] in {"4624", "4625", "4672", "4688", "4720", "4740"}
+            seen.add(rec["event"]["code"])
+        assert seen == {"4624", "4625", "4672", "4688", "4720", "4740"}
+
+    def test_outcomes(self) -> None:
+        for rec in self._records(count=300):
+            expected = "failure" if rec["event"]["code"] == "4625" else "success"
+            assert rec["event"]["outcome"] == expected
+
+    def test_keywords_are_human_readable_labels(self) -> None:
+        for rec in self._records(count=300):
+            keywords = rec["winlog"]["keywords"]
+            assert keywords in [["Audit Success"], ["Audit Failure"]]
+            if rec["event"]["code"] == "4625":
+                assert keywords == ["Audit Failure"]
+            else:
+                assert keywords == ["Audit Success"]
+
+    def test_process_metadata_shape(self) -> None:
+        for rec in self._records(count=200):
+            proc = rec["winlog"]["process"]
+            assert isinstance(proc["pid"], int)
+            assert isinstance(proc["thread"]["id"], int)
+            assert 560 <= proc["pid"] <= 980
+            assert 1000 <= proc["thread"]["id"] <= 9900
+
+    def test_event_data_preserves_original_manifest_names(self) -> None:
+        for rec in self._records(count=400):
+            event_data = rec["winlog"]["event_data"]
+            code = rec["event"]["code"]
+            if code == "4624":
+                assert "TargetUserName" in event_data
+                assert "AuthenticationPackageName" in event_data
+                assert "IpAddress" in event_data
+                assert "ElevatedToken" in event_data
+            elif code == "4625":
+                assert "TargetUserName" in event_data
+                assert "Status" in event_data
+                assert "SubStatus" in event_data
+                assert "IpAddress" in event_data
+            elif code == "4672":
+                assert "SubjectUserName" in event_data
+                assert "PrivilegeList" in event_data
+            elif code == "4688":
+                assert "NewProcessName" in event_data
+                assert "CommandLine" in event_data
+                assert "ParentProcessName" in event_data
+                assert "MandatoryLabel" in event_data
+            elif code == "4720":
+                assert "TargetUserName" in event_data
+                assert "SamAccountName" in event_data
+                assert "UserPrincipalName" in event_data
+            elif code == "4740":
+                assert "TargetUserName" in event_data
+                assert "CallerComputerName" in event_data
+
+    def test_flattened_ndjson_keys_not_at_root(self) -> None:
+        for rec in self._records(count=200):
+            assert "target_user" not in rec
+            assert "source_ip" not in rec
+            assert "computer" not in rec
+            assert "event_id" not in rec
+
+    def test_per_computer_record_ids(self) -> None:
+        by_computer: defaultdict[str, list[int]] = defaultdict(list)
+        merged: list[int] = []
+        for rec in self._records(count=400):
+            computer = rec["winlog"]["computer_name"]
+            rid = int(rec["winlog"]["record_id"])
+            by_computer[computer].append(rid)
+            merged.append(rid)
+        assert len(by_computer) >= 3
+        for computer, ids in by_computer.items():
+            assert all(b == a + 1 for a, b in pairwise(ids)), computer
+        bases = {ids[0] for ids in by_computer.values()}
+        assert len(bases) == len(by_computer)
+        assert not all(b > a for a, b in pairwise(merged)), "global gapless counter is unrealistic"
+
+    def test_timestamps_match(self) -> None:
+        for rec in self._records(count=200):
+            assert rec["@timestamp"] == rec["winlog"]["time_created"]
+            # ISO-8601 UTC with millisecond precision
+            assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", rec["@timestamp"])
+
+    def test_brute_force_scenario(self) -> None:
+        records = self._records(count=800, backfill="2h", extra=["--scenario", "brute-force"])
+        failures = [r for r in records if r["event"]["code"] == "4625"]
+        attacker_ip = Counter(
+            r["winlog"]["event_data"].get("IpAddress", "-") for r in failures
+        ).most_common(1)[0][0]
+        flood = [r for r in failures if r["winlog"]["event_data"].get("IpAddress") == attacker_ip]
+        assert len(flood) > 50
+        assert len({r["winlog"]["event_data"]["TargetUserName"] for r in flood}) > 8
+        assert all(r["winlog"]["event_data"]["LogonType"] == "3" for r in flood)
+        assert all(r["winlog"]["event_data"]["Status"] == "0xC000006D" for r in flood)
+        assert all(r["winlog"]["event_data"]["SubStatus"] == "0xC000006A" for r in flood)
+        breaches = [
+            r
+            for r in records
+            if r["event"]["code"] == "4624"
+            and r["winlog"]["event_data"].get("IpAddress") == attacker_ip
+        ]
+        assert len(breaches) == 1
+        assert any(r["event"]["code"] == "4740" for r in records)
+
+    def test_seed_determinism(self) -> None:
+        first = generate(main, count=100, seed=42, extra=["--format", "elastic"])
+        second = generate(main, count=100, seed=42, extra=["--format", "elastic"])
+        assert first == second
+
+
+class TestCrossFormatEquivalence:
+    def test_event_ids_computers_record_ids_match(self) -> None:
+        xml_lines = generate(main, count=200, seed=7, extra=["--format", "xml"])
+        elastic_lines = generate(main, count=200, seed=7, extra=["--format", "elastic"])
+        assert len(xml_lines) == len(elastic_lines)
+        for xml_line, elastic_line in zip(xml_lines, elastic_lines, strict=True):
+            xml_root = _parse(xml_line)
+            elastic = json.loads(elastic_line)
+            xml_event_id = int(xml_root.findtext("e:System/e:EventID", namespaces=NS) or 0)
+            assert str(xml_event_id) == elastic["event"]["code"]
+            assert (
+                xml_root.findtext("e:System/e:Computer", namespaces=NS)
+                == elastic["winlog"]["computer_name"]
+            )
+            assert (
+                xml_root.findtext("e:System/e:EventRecordID", namespaces=NS)
+                == elastic["winlog"]["record_id"]
+            )
+            xml_time = xml_root.find("e:System/e:TimeCreated", NS)
+            assert xml_time is not None
+            # Elastic uses millisecond precision; XML uses 7-digit FILETIME.
+            assert elastic["winlog"]["time_created"].startswith(xml_time.get("SystemTime", "")[:23])
+            xml_data = _event_data(xml_root)
+            assert xml_data == elastic["winlog"]["event_data"]
 
 
 class TestDeterminism:

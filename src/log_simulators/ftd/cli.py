@@ -229,11 +229,7 @@ def build_event_fn(cfg: RunConfig, args: argparse.Namespace) -> EventFn:
     next_conn_id = rng.randint(1, 500_000)
     open_conns: dict[int, Conn] = {}
 
-    ips_flood = (
-        BurstSchedule(period=600, length=45)
-        if args.scenario == "ips-flood"
-        else None
-    )
+    ips_flood = BurstSchedule(period=600, length=45) if args.scenario == "ips-flood" else None
     attacker_ip = pick(rng, outside, outside_weights)
     attack_target = rng.choice(inside)
 
@@ -352,9 +348,7 @@ def build_event_fn(cfg: RunConfig, args: argparse.Namespace) -> EventFn:
             ordered.append((k, v))
         return f"%FTD-6-{EVENT_IDS['conn_end']}: {_render_pairs(ordered)}"
 
-    def intrusion(
-        ts: datetime, src_ip: str | None = None, dst_ip: str | None = None
-    ) -> str:
+    def intrusion(ts: datetime, src_ip: str | None = None, dst_ip: str | None = None) -> str:
         proto = pick(rng, PROTOCOLS, PROTOCOL_WEIGHTS)
         if src_ip is None:
             src_ip = pick(rng, outside, outside_weights)

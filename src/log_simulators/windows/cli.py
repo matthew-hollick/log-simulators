@@ -308,6 +308,49 @@ def _render_ndjson(parts: EventParts, ts: datetime, record_id: int) -> str:
     return json.dumps(rec, separators=(",", ":"))
 
 
+def _render_elastic(
+    parts: EventParts,
+    ts: datetime,
+    record_id: int,
+    process_id: int,
+    thread_id: int,
+) -> str:
+    """Render an Elastic Winlog-compatible pre-ingest document."""
+    event_id, keywords, computer, data = parts
+    utc = ts.astimezone(timezone.utc)
+    timestamp = f"{utc.strftime('%Y-%m-%dT%H:%M:%S')}.{utc.microsecond // 1000:03d}Z"
+    version, _task = EVENT_META[event_id]
+    outcome = "failure" if keywords == KEYWORDS_FAILURE else "success"
+    keyword_label = "Audit Failure" if keywords == KEYWORDS_FAILURE else "Audit Success"
+    rec: dict[str, object] = {
+        "@timestamp": timestamp,
+        "event": {
+            "code": str(event_id),
+            "outcome": outcome,
+            "kind": "event",
+            "module": "system",
+        },
+        "winlog": {
+            "api": "wineventlog",
+            "channel": "Security",
+            "computer_name": computer,
+            "event_id": str(event_id),
+            "keywords": [keyword_label],
+            "process": {
+                "pid": process_id,
+                "thread": {"id": thread_id},
+            },
+            "provider_guid": PROVIDER_GUID,
+            "provider_name": PROVIDER,
+            "record_id": str(record_id),
+            "time_created": timestamp,
+            "version": version,
+            "event_data": dict(data),
+        },
+    }
+    return json.dumps(rec, separators=(",", ":"))
+
+
 def build_event_fn(cfg: RunConfig, args: argparse.Namespace) -> EventFn:
     rng = cfg.content_rng()
     fk = make_faker(cfg.seed)
@@ -594,10 +637,15 @@ def build_event_fn(cfg: RunConfig, args: argparse.Namespace) -> EventFn:
         else:
             parts = make_base()
         record_id = next(record_counters[parts[2]])
+        system_time = _system_time(ts)
+        # Generate once per event so every renderer sees identical metadata.
+        process_id = lsass_pid
+        thread_id = rng.randint(1000, 9900)
         if args.format == "ndjson":
             return _render_ndjson(parts, ts, record_id)
-        tid = rng.randint(1000, 9900)
-        return _render_xml(parts, _system_time(ts), record_id, lsass_pid, tid, args.pretty)
+        if args.format == "elastic":
+            return _render_elastic(parts, ts, record_id, process_id, thread_id)
+        return _render_xml(parts, system_time, record_id, process_id, thread_id, args.pretty)
 
     return make_event
 
@@ -611,9 +659,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--format",
-        choices=["xml", "ndjson"],
+        choices=["xml", "ndjson", "elastic"],
         default="xml",
-        help="output format: single-line Event XML or winlogbeat-style JSON (default: xml)",
+        help="output format: xml (single-line Windows Event XML), "
+        "ndjson (compact flattened JSON), "
+        "elastic (Elastic Winlog-compatible JSON for the system.security data stream)",
     )
     parser.add_argument(
         "--pretty",

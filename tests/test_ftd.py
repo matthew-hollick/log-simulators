@@ -47,9 +47,7 @@ class TestFormats:
             assert int(m.group(1)) == 160 + int(m.group(3)), line
 
     def test_intrusion_has_key_fields(self) -> None:
-        lines = [
-            line for line in generate(main, count=3000) if line.startswith("%FTD-1-430001")
-        ]
+        lines = [line for line in generate(main, count=3000) if line.startswith("%FTD-1-430001")]
         assert lines, "expected at least one intrusion event"
         for line in lines:
             assert "Classification:" in line
@@ -57,18 +55,14 @@ class TestFormats:
             assert "Message:" in line
 
     def test_file_events_have_sha_and_size(self) -> None:
-        lines = [
-            line for line in generate(main, count=2000) if line.startswith("%FTD-5-430004")
-        ]
+        lines = [line for line in generate(main, count=2000) if line.startswith("%FTD-5-430004")]
         assert lines, "expected at least one file event"
         for line in lines:
             assert "Sha256:" in line
             assert "FileSize:" in line
 
     def test_malware_events_have_disposition(self) -> None:
-        lines = [
-            line for line in generate(main, count=2000) if line.startswith("%FTD-4-430005")
-        ]
+        lines = [line for line in generate(main, count=2000) if line.startswith("%FTD-4-430005")]
         assert lines, "expected at least one malware event"
         for line in lines:
             assert "Disposition:" in line
@@ -113,7 +107,7 @@ class TestConnectionPairing:
 
 class TestRealism:
     def test_ips_recur(self) -> None:
-        ips = Counter()
+        ips: Counter[str] = Counter()
         for line in generate(main, count=800):
             m = re.search(r"SrcIP: " + IP, line)
             if m:

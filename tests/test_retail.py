@@ -142,7 +142,8 @@ class TestScenario:
         self, rows: list[dict[str, str]]
     ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
         sched = BurstSchedule(period=600, length=60)
-        in_win, out_win = [], []
+        in_win: list[dict[str, str]] = []
+        out_win: list[dict[str, str]] = []
         for r in rows:
             ts = datetime.fromisoformat(r["timestamp"])
             (in_win if sched.active(ts) else out_win).append(r)
